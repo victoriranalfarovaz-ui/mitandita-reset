@@ -9,7 +9,7 @@
       import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
       const SUPABASE_URL = "https://ycrvtgqwxdpsfcbfguto.supabase.co";
-      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljcnZ0Z3F3eGRwc2ZjYmZndXRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4NDU5NjUsImV4cCI6MjA4NjQyMTk2NX0.sMZuKwbz8G0bBXIBIhARnCN_3lwZzMTxIWNgEeIJFbc";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljcnZ0Z3F3eGRwc2ZjYmZndXRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4NDU5NjUsImV4cCI6MjA4NjQyMTk2NX0.sMZuKwbz8G0bBXIBIhARnCN_3lwZzMTxIWNgEeIJFbc"; 
 
       const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -48,77 +48,59 @@
           const hashParams = getHashParams();
           const queryParams = getQueryParams();
 
-          const hashAccessToken = hashParams.get("access_token");
-          const hashRefreshToken = hashParams.get("refresh_token");
+          const access_token = hashParams.get("access_token");
+          const refresh_token = hashParams.get("refresh_token");
           const hashType = hashParams.get("type");
 
           const code = queryParams.get("code");
-          const tokenHash = queryParams.get("token_hash");
+          const token_hash = queryParams.get("token_hash");
           const queryType = queryParams.get("type");
-          const error = queryParams.get("error");
-          const errorDescription = queryParams.get("error_description");
 
-          if (error) {
-            showStatus(errorDescription || "El enlace no es válido o ya expiró.", "error");
-            hideForm();
-            return;
-          }
-
-          // Caso 1: vienen access/refresh token en hash
-          if (hashType === "recovery" && hashAccessToken && hashRefreshToken) {
-            const { error: sessionError } = await supabase.auth.setSession({
-              access_token: hashAccessToken,
-              refresh_token: hashRefreshToken,
+          // ✅ Caso 1: tokens directos
+          if (hashType === "recovery" && access_token && refresh_token) {
+            const { error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
             });
 
-            if (sessionError) {
-              showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
-              hideForm();
-              return;
-            }
+            if (error) throw error;
 
             showStatus("Escribe tu nueva contraseña.", "success");
             showForm();
             return;
           }
 
-          // Caso 2: viene code en query (muy común)
+          // ✅ Caso 2: PKCE (code)
           if (code) {
-            const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+            window.history.replaceState({}, document.title, window.location.pathname);
 
-            if (exchangeError) {
-              showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
-              hideForm();
-              return;
-            }
+            const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+            if (error) throw error;
 
             showStatus("Escribe tu nueva contraseña.", "success");
             showForm();
             return;
           }
 
-          // Caso 3: viene token_hash + type=recovery
-          if (queryType === "recovery" && tokenHash) {
-            const { error: verifyError } = await supabase.auth.verifyOtp({
-              token_hash: tokenHash,
+          // ✅ Caso 3: token_hash
+          if (queryType === "recovery" && token_hash) {
+            const { error } = await supabase.auth.verifyOtp({
+              token_hash,
               type: "recovery",
             });
 
-            if (verifyError) {
-              showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
-              hideForm();
-              return;
-            }
+            if (error) throw error;
 
             showStatus("Escribe tu nueva contraseña.", "success");
             showForm();
             return;
           }
 
-          showStatus("Enlace inválido.", "error");
-          hideForm();
-        } catch (e) {
-          showStatus("No se pudo procesar el enlace.", "error");
+          throw new Error("Enlace inválido");
+        } catch (err) {
+          console.log(err);
+          showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
           hideForm();
         }
       }
@@ -126,12 +108,9 @@
       async function savePassword(e) {
         e.preventDefault();
 
-        const passwordInput = document.getElementById("password");
-        const confirmInput = document.getElementById("confirmPassword");
-        const submitBtn = document.getElementById("submitBtn");
-
-        const password = passwordInput.value.trim();
-        const confirmPassword = confirmInput.value.trim();
+        const password = document.getElementById("password").value.trim();
+        const confirmPassword = document.getElementById("confirmPassword").value.trim();
+        const btn = document.getElementById("submitBtn");
 
         if (!password || !confirmPassword) {
           showStatus("Completa ambos campos.", "error");
@@ -139,7 +118,7 @@
         }
 
         if (password.length < 6) {
-          showStatus("La contraseña debe tener al menos 6 caracteres.", "error");
+          showStatus("Mínimo 6 caracteres.", "error");
           return;
         }
 
@@ -148,23 +127,23 @@
           return;
         }
 
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Guardando...";
+        btn.disabled = true;
+        btn.textContent = "Guardando...";
 
         const { error } = await supabase.auth.updateUser({ password });
 
         if (error) {
-          showStatus(error.message || "No se pudo cambiar la contraseña.", "error");
-          submitBtn.disabled = false;
-          submitBtn.textContent = "Guardar contraseña";
+          showStatus(error.message, "error");
+          btn.disabled = false;
+          btn.textContent = "Guardar contraseña";
           return;
         }
 
-        showStatus("Contraseña actualizada correctamente 🎉", "success");
+        showStatus("Contraseña actualizada 🎉", "success");
         document.getElementById("reset-form").reset();
         document.getElementById("reset-form").style.display = "none";
-        showOpenAppButton();
 
+        showOpenAppButton();
         await supabase.auth.signOut();
       }
 
@@ -199,23 +178,24 @@
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
       }
 
+      /* 🔥 LOGO MÁS GRANDE */
       .logo {
-        width: 110px;
-        height: 110px;
+        width: 160px;
+        height: 160px;
         object-fit: contain;
         display: block;
-        margin: 0 auto 14px;
+        margin: 0 auto 10px;
       }
 
       h1 {
         text-align: center;
-        margin: 0 0 10px;
+        margin: 10px 0;
       }
 
       p.sub {
         text-align: center;
         color: #666;
-        margin: 0 0 16px;
+        margin-bottom: 16px;
       }
 
       .status {
@@ -223,7 +203,6 @@
         padding: 10px;
         border-radius: 10px;
         margin-bottom: 12px;
-        font-size: 14px;
       }
 
       .success {
@@ -236,11 +215,6 @@
         color: #991b1b;
       }
 
-      .info {
-        background: #f3f4f6;
-        color: #374151;
-      }
-
       input {
         width: 100%;
         padding: 14px;
@@ -248,7 +222,6 @@
         border-radius: 12px;
         border: 1px solid #eee;
         background: #fafafa;
-        box-sizing: border-box;
       }
 
       button {
@@ -259,18 +232,12 @@
         background: #ff7a00;
         color: white;
         font-weight: bold;
-        cursor: pointer;
-      }
-
-      button:disabled {
-        opacity: 0.6;
       }
 
       .footer {
         text-align: center;
         margin-top: 12px;
         color: #666;
-        font-size: 14px;
       }
 
       .open-app {
@@ -282,17 +249,17 @@
 
   <body>
     <div class="card">
-      <img src="./icon.png" alt="MiTandita" class="logo" />
+      <img src="./icon.png" class="logo" />
 
       <h1>Cambiar contraseña</h1>
       <p class="sub">MiTandita</p>
 
       <div id="status" class="status"></div>
 
-      <form id="reset-form" style="display: none;">
+      <form id="reset-form" style="display:none;">
         <input id="password" type="password" placeholder="Nueva contraseña" />
         <input id="confirmPassword" type="password" placeholder="Confirmar contraseña" />
-        <button id="submitBtn" type="submit">Guardar contraseña</button>
+        <button id="submitBtn">Guardar contraseña</button>
       </form>
 
       <button id="openAppBtn" class="open-app" onclick="openApp()">
