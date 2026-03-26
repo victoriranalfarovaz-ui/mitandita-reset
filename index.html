@@ -45,37 +45,28 @@
 
       async function bootstrapRecoverySession() {
         try {
-          const hashParams = getHashParams();
-          const queryParams = getQueryParams();
+          const hash = window.location.hash.substring(1);
+const params = new URLSearchParams(hash);
 
-          const accessToken = hashParams.get("access_token");
-          const refreshToken = hashParams.get("refresh_token");
-          const hashType = hashParams.get("type");
+const access_token = params.get("access_token");
+const refresh_token = params.get("refresh_token");
+const type = params.get("type");
 
-          const code = queryParams.get("code");
-          const tokenHash = queryParams.get("token_hash");
-          const token = queryParams.get("token");
-          const queryType = queryParams.get("type");
-          const error = queryParams.get("error");
-          const errorDescription = queryParams.get("error_description");
+if (type === "recovery" && access_token && refresh_token) {
+  const { data, error } = await supabase.auth.setSession({
+    access_token,
+    refresh_token,
+  });
 
-          if (error) {
-            throw new Error(errorDescription || "El enlace no es válido o ya expiró.");
-          }
+  if (error) {
+    showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
+    return;
+  }
 
-          // Caso 1: access/refresh tokens en el hash
-          if (hashType === "recovery" && accessToken && refreshToken) {
-            const { error } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-
-            if (error) throw error;
-
-            showStatus("Escribe tu nueva contraseña.", "success");
-            showForm();
-            return;
-          }
+  showStatus("Escribe tu nueva contraseña.", "success");
+  showForm();
+  return;
+}
 
           // Caso 2: PKCE code
           if (code) {
