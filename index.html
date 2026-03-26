@@ -9,7 +9,7 @@
       import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
       const SUPABASE_URL = "https://ycrvtgqwxdpsfcbfguto.supabase.co";
-      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljcnZ0Z3F3eGRwc2ZjYmZndXRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4NDU5NjUsImV4cCI6MjA4NjQyMTk2NX0.sMZuKwbz8G0bBXIBIhARnCN_3lwZzMTxIWNgEeIJFbc"; 
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljcnZ0Z3F3eGRwc2ZjYmZndXRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4NDU5NjUsImV4cCI6MjA4NjQyMTk2NX0.sMZuKwbz8G0bBXIBIhARnCN_3lwZzMTxIWNgEeIJFbc";
 
       const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -48,19 +48,26 @@
           const hashParams = getHashParams();
           const queryParams = getQueryParams();
 
-          const access_token = hashParams.get("access_token");
-          const refresh_token = hashParams.get("refresh_token");
+          const accessToken = hashParams.get("access_token");
+          const refreshToken = hashParams.get("refresh_token");
           const hashType = hashParams.get("type");
 
           const code = queryParams.get("code");
-          const token_hash = queryParams.get("token_hash");
+          const tokenHash = queryParams.get("token_hash");
+          const token = queryParams.get("token");
           const queryType = queryParams.get("type");
+          const error = queryParams.get("error");
+          const errorDescription = queryParams.get("error_description");
 
-          // ✅ Caso 1: tokens directos
-          if (hashType === "recovery" && access_token && refresh_token) {
+          if (error) {
+            throw new Error(errorDescription || "El enlace no es válido o ya expiró.");
+          }
+
+          // Caso 1: access/refresh tokens en el hash
+          if (hashType === "recovery" && accessToken && refreshToken) {
             const { error } = await supabase.auth.setSession({
-              access_token,
-              refresh_token,
+              access_token: accessToken,
+              refresh_token: refreshToken,
             });
 
             if (error) throw error;
@@ -70,23 +77,23 @@
             return;
           }
 
-          // ✅ Caso 2: PKCE (code)
+          // Caso 2: PKCE code
           if (code) {
-            window.history.replaceState({}, document.title, window.location.pathname);
-
             const { error } = await supabase.auth.exchangeCodeForSession(code);
 
             if (error) throw error;
+
+            window.history.replaceState({}, document.title, window.location.pathname);
 
             showStatus("Escribe tu nueva contraseña.", "success");
             showForm();
             return;
           }
 
-          // ✅ Caso 3: token_hash
-          if (queryType === "recovery" && token_hash) {
+          // Caso 3: token_hash
+          if (queryType === "recovery" && tokenHash) {
             const { error } = await supabase.auth.verifyOtp({
-              token_hash,
+              token_hash: tokenHash,
               type: "recovery",
             });
 
@@ -97,9 +104,23 @@
             return;
           }
 
-          throw new Error("Enlace inválido");
+          // Caso 4: token clásico en verify?token=...
+          if (queryType === "recovery" && token) {
+            const { error } = await supabase.auth.verifyOtp({
+              token_hash: token,
+              type: "recovery",
+            });
+
+            if (error) throw error;
+
+            showStatus("Escribe tu nueva contraseña.", "success");
+            showForm();
+            return;
+          }
+
+          throw new Error("Enlace inválido.");
         } catch (err) {
-          console.log(err);
+          console.error(err);
           showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
           hideForm();
         }
@@ -118,7 +139,7 @@
         }
 
         if (password.length < 6) {
-          showStatus("Mínimo 6 caracteres.", "error");
+          showStatus("La contraseña debe tener al menos 6 caracteres.", "error");
           return;
         }
 
@@ -133,17 +154,17 @@
         const { error } = await supabase.auth.updateUser({ password });
 
         if (error) {
-          showStatus(error.message, "error");
+          showStatus(error.message || "No se pudo cambiar la contraseña.", "error");
           btn.disabled = false;
           btn.textContent = "Guardar contraseña";
           return;
         }
 
-        showStatus("Contraseña actualizada 🎉", "success");
+        showStatus("Contraseña actualizada correctamente 🎉", "success");
         document.getElementById("reset-form").reset();
         document.getElementById("reset-form").style.display = "none";
-
         showOpenAppButton();
+
         await supabase.auth.signOut();
       }
 
@@ -178,7 +199,6 @@
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
       }
 
-      /* 🔥 LOGO MÁS GRANDE */
       .logo {
         width: 160px;
         height: 160px;
@@ -222,6 +242,7 @@
         border-radius: 12px;
         border: 1px solid #eee;
         background: #fafafa;
+        box-sizing: border-box;
       }
 
       button {
@@ -232,6 +253,7 @@
         background: #ff7a00;
         color: white;
         font-weight: bold;
+        cursor: pointer;
       }
 
       .footer {
@@ -249,17 +271,17 @@
 
   <body>
     <div class="card">
-      <img src="./icon.png" class="logo" />
+      <img src="./icon.png" class="logo" alt="MiTandita" />
 
       <h1>Cambiar contraseña</h1>
       <p class="sub">MiTandita</p>
 
       <div id="status" class="status"></div>
 
-      <form id="reset-form" style="display:none;">
+      <form id="reset-form" style="display: none;">
         <input id="password" type="password" placeholder="Nueva contraseña" />
         <input id="confirmPassword" type="password" placeholder="Confirmar contraseña" />
-        <button id="submitBtn">Guardar contraseña</button>
+        <button id="submitBtn" type="submit">Guardar contraseña</button>
       </form>
 
       <button id="openAppBtn" class="open-app" onclick="openApp()">
