@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MiTandita | Cambiar contraseña</title>
+
+    <script type="module">
+      import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+      const SUPABASE_URL = "https://ycrvtgqwxdpsfcbfguto.supabase.co";
+      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljcnZ0Z3F3eGRwc2ZjYmZndXRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4NDU5NjUsImV4cCI6MjA4NjQyMTk2NX0.sMZuKwbz8G0bBXIBIhARnCN_3lwZzMTxIWNgEeIJFbc";
+
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      const statusBox = document.getElementById("status");
+      const form = document.getElementById("reset-form");
+      const passwordInput = document.getElementById("password");
+      const confirmInput = document.getElementById("confirmPassword");
+      const submitBtn = document.getElementById("submitBtn");
+
+      function showStatus(message, type = "info") {
+        statusBox.textContent = message;
+        statusBox.className = "status " + type;
+        statusBox.style.display = "block";
+      }
+
+      function getHashParams() {
+        const hash = window.location.hash.replace("#", "");
+        const params = new URLSearchParams(hash);
+        return {
+          access_token: params.get("access_token"),
+          refresh_token: params.get("refresh_token"),
+          type: params.get("type"),
+          error: params.get("error"),
+          error_description: params.get("error_description"),
+        };
+      }
+
+      async function bootstrapRecoverySession() {
+        const {
+          access_token,
+          refresh_token,
+          type,
+          error,
+          error_description,
+        } = getHashParams();
+
+        if (error) {
+          showStatus(
+            error_description || "El enlace no es válido o ya expiró.",
+            "error"
+          );
+          form.style.display = "none";
+          return;
+        }
+
+        if (type !== "recovery" || !access_token || !refresh_token) {
+          showStatus("Enlace inválido.", "error");
+          form.style.display = "none";
+          return;
+        }
+
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+
+        if (sessionError) {
+          showStatus("No se pudo validar el enlace.", "error");
+          form.style.display = "none";
+          return;
+        }
+
+        showStatus("Escribe tu nueva contraseña.", "success");
+      }
+
+      window.addEventListener("DOMContentLoaded", () => {
+        bootstrapRecoverySession();
+
+        document
+          .getElementById("reset-form")
+          .addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const password = passwordInput.value.trim();
+            const confirmPassword = confirmInput.value.trim();
+
+            if (!password || !confirmPassword) {
+              showStatus("Completa ambos campos.", "error");
+              return;
+            }
+
+            if (password.length < 6) {
+              showStatus("Mínimo 6 caracteres.", "error");
+              return;
+            }
+
+            if (password !== confirmPassword) {
+              showStatus("Las contraseñas no coinciden.", "error");
+              return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Guardando...";
+
+            const { error } = await supabase.auth.updateUser({ password });
+
+            if (error) {
+              showStatus(error.message, "error");
+              submitBtn.disabled = false;
+              submitBtn.textContent = "Guardar contraseña";
+              return;
+            }
+
+            showStatus("Contraseña actualizada correctamente 🎉", "success");
+
+            await supabase.auth.signOut();
+
+            submitBtn.style.display = "none";
+          });
+      });
+    </script>
+
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #ff7a00;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+
+      .card {
+        width: 100%;
+        max-width: 420px;
+        background: white;
+        border-radius: 20px;
+        padding: 28px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      }
+
+      .logo {
+        width: 100px;
+        height: 100px;
+        object-fit: contain;
+        display: block;
+        margin: 0 auto 12px;
+      }
+
+      h1 {
+        text-align: center;
+        margin-bottom: 10px;
+      }
+
+      p.sub {
+        text-align: center;
+        color: #666;
+        margin-bottom: 16px;
+      }
+
+      .status {
+        display: none;
+        padding: 10px;
+        border-radius: 10px;
+        margin-bottom: 12px;
+        font-size: 14px;
+      }
+
+      .success { background: #ecfdf3; color: green; }
+      .error { background: #fef2f2; color: red; }
+
+      input {
+        width: 100%;
+        padding: 14px;
+        margin-bottom: 12px;
+        border-radius: 12px;
+        border: 1px solid #eee;
+        background: #fafafa;
+      }
+
+      button {
+        width: 100%;
+        padding: 14px;
+        border-radius: 12px;
+        border: none;
+        background: #ff7a00;
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+      }
+
+      .footer {
+        text-align: center;
+        margin-top: 12px;
+        color: #666;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="card">
+      <!-- 🔥 AQUÍ TU LOGO -->
+      <img src="/Users/victoralfaro/ResetPassMiTandita" class="logo" />
+
+      <h1>Cambiar contraseña</h1>
+      <p class="sub">MiTandita</p>
+
+      <div id="status" class="status"></div>
+
+      <form id="reset-form">
+        <input id="password" type="password" placeholder="Nueva contraseña" />
+        <input id="confirmPassword" type="password" placeholder="Confirmar contraseña" />
+        <button id="submitBtn">Guardar contraseña</button>
+      </form>
+
+      <div class="footer">
+        Después vuelve a la app e inicia sesión.
+      </div>
+    </div>
+  </body>
+</html>
