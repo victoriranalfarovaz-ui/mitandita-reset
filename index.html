@@ -13,112 +13,168 @@
 
       const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-      const statusBox = document.getElementById("status");
-      const form = document.getElementById("reset-form");
-      const passwordInput = document.getElementById("password");
-      const confirmInput = document.getElementById("confirmPassword");
-      const submitBtn = document.getElementById("submitBtn");
-
       function showStatus(message, type = "info") {
+        const statusBox = document.getElementById("status");
         statusBox.textContent = message;
         statusBox.className = "status " + type;
         statusBox.style.display = "block";
       }
 
+      function showForm() {
+        document.getElementById("reset-form").style.display = "block";
+      }
+
+      function hideForm() {
+        document.getElementById("reset-form").style.display = "none";
+      }
+
+      function showOpenAppButton() {
+        document.getElementById("openAppBtn").style.display = "block";
+      }
+
       function getHashParams() {
-        const hash = window.location.hash.replace("#", "");
-        const params = new URLSearchParams(hash);
-        return {
-          access_token: params.get("access_token"),
-          refresh_token: params.get("refresh_token"),
-          type: params.get("type"),
-          error: params.get("error"),
-          error_description: params.get("error_description"),
-        };
+        const hash = window.location.hash.startsWith("#")
+          ? window.location.hash.slice(1)
+          : "";
+        return new URLSearchParams(hash);
+      }
+
+      function getQueryParams() {
+        return new URLSearchParams(window.location.search);
       }
 
       async function bootstrapRecoverySession() {
-        const {
-          access_token,
-          refresh_token,
-          type,
-          error,
-          error_description,
-        } = getHashParams();
+        try {
+          const hashParams = getHashParams();
+          const queryParams = getQueryParams();
 
-        if (error) {
-          showStatus(
-            error_description || "El enlace no es válido o ya expiró.",
-            "error"
-          );
-          form.style.display = "none";
-          return;
-        }
+          const hashAccessToken = hashParams.get("access_token");
+          const hashRefreshToken = hashParams.get("refresh_token");
+          const hashType = hashParams.get("type");
 
-        if (type !== "recovery" || !access_token || !refresh_token) {
+          const code = queryParams.get("code");
+          const tokenHash = queryParams.get("token_hash");
+          const queryType = queryParams.get("type");
+          const error = queryParams.get("error");
+          const errorDescription = queryParams.get("error_description");
+
+          if (error) {
+            showStatus(errorDescription || "El enlace no es válido o ya expiró.", "error");
+            hideForm();
+            return;
+          }
+
+          // Caso 1: vienen access/refresh token en hash
+          if (hashType === "recovery" && hashAccessToken && hashRefreshToken) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: hashAccessToken,
+              refresh_token: hashRefreshToken,
+            });
+
+            if (sessionError) {
+              showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
+              hideForm();
+              return;
+            }
+
+            showStatus("Escribe tu nueva contraseña.", "success");
+            showForm();
+            return;
+          }
+
+          // Caso 2: viene code en query (muy común)
+          if (code) {
+            const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+            if (exchangeError) {
+              showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
+              hideForm();
+              return;
+            }
+
+            showStatus("Escribe tu nueva contraseña.", "success");
+            showForm();
+            return;
+          }
+
+          // Caso 3: viene token_hash + type=recovery
+          if (queryType === "recovery" && tokenHash) {
+            const { error: verifyError } = await supabase.auth.verifyOtp({
+              token_hash: tokenHash,
+              type: "recovery",
+            });
+
+            if (verifyError) {
+              showStatus("No se pudo validar el enlace. Solicita uno nuevo.", "error");
+              hideForm();
+              return;
+            }
+
+            showStatus("Escribe tu nueva contraseña.", "success");
+            showForm();
+            return;
+          }
+
           showStatus("Enlace inválido.", "error");
-          form.style.display = "none";
-          return;
+          hideForm();
+        } catch (e) {
+          showStatus("No se pudo procesar el enlace.", "error");
+          hideForm();
         }
-
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token,
-          refresh_token,
-        });
-
-        if (sessionError) {
-          showStatus("No se pudo validar el enlace.", "error");
-          form.style.display = "none";
-          return;
-        }
-
-        showStatus("Escribe tu nueva contraseña.", "success");
       }
 
-      window.addEventListener("DOMContentLoaded", () => {
-        bootstrapRecoverySession();
+      async function savePassword(e) {
+        e.preventDefault();
 
-        document
-          .getElementById("reset-form")
-          .addEventListener("submit", async (e) => {
-            e.preventDefault();
+        const passwordInput = document.getElementById("password");
+        const confirmInput = document.getElementById("confirmPassword");
+        const submitBtn = document.getElementById("submitBtn");
 
-            const password = passwordInput.value.trim();
-            const confirmPassword = confirmInput.value.trim();
+        const password = passwordInput.value.trim();
+        const confirmPassword = confirmInput.value.trim();
 
-            if (!password || !confirmPassword) {
-              showStatus("Completa ambos campos.", "error");
-              return;
-            }
+        if (!password || !confirmPassword) {
+          showStatus("Completa ambos campos.", "error");
+          return;
+        }
 
-            if (password.length < 6) {
-              showStatus("Mínimo 6 caracteres.", "error");
-              return;
-            }
+        if (password.length < 6) {
+          showStatus("La contraseña debe tener al menos 6 caracteres.", "error");
+          return;
+        }
 
-            if (password !== confirmPassword) {
-              showStatus("Las contraseñas no coinciden.", "error");
-              return;
-            }
+        if (password !== confirmPassword) {
+          showStatus("Las contraseñas no coinciden.", "error");
+          return;
+        }
 
-            submitBtn.disabled = true;
-            submitBtn.textContent = "Guardando...";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Guardando...";
 
-            const { error } = await supabase.auth.updateUser({ password });
+        const { error } = await supabase.auth.updateUser({ password });
 
-            if (error) {
-              showStatus(error.message, "error");
-              submitBtn.disabled = false;
-              submitBtn.textContent = "Guardar contraseña";
-              return;
-            }
+        if (error) {
+          showStatus(error.message || "No se pudo cambiar la contraseña.", "error");
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Guardar contraseña";
+          return;
+        }
 
-            showStatus("Contraseña actualizada correctamente 🎉", "success");
+        showStatus("Contraseña actualizada correctamente 🎉", "success");
+        document.getElementById("reset-form").reset();
+        document.getElementById("reset-form").style.display = "none";
+        showOpenAppButton();
 
-            await supabase.auth.signOut();
+        await supabase.auth.signOut();
+      }
 
-            submitBtn.style.display = "none";
-          });
+      window.openApp = function () {
+        window.location.href = "mitandita://login";
+      };
+
+      window.addEventListener("DOMContentLoaded", async () => {
+        document.getElementById("reset-form").addEventListener("submit", savePassword);
+        await bootstrapRecoverySession();
       });
     </script>
 
@@ -140,26 +196,26 @@
         background: white;
         border-radius: 20px;
         padding: 28px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
       }
 
       .logo {
-        width: 100px;
-        height: 100px;
+        width: 110px;
+        height: 110px;
         object-fit: contain;
         display: block;
-        margin: 0 auto 12px;
+        margin: 0 auto 14px;
       }
 
       h1 {
         text-align: center;
-        margin-bottom: 10px;
+        margin: 0 0 10px;
       }
 
       p.sub {
         text-align: center;
         color: #666;
-        margin-bottom: 16px;
+        margin: 0 0 16px;
       }
 
       .status {
@@ -170,8 +226,20 @@
         font-size: 14px;
       }
 
-      .success { background: #ecfdf3; color: green; }
-      .error { background: #fef2f2; color: red; }
+      .success {
+        background: #ecfdf3;
+        color: #166534;
+      }
+
+      .error {
+        background: #fef2f2;
+        color: #991b1b;
+      }
+
+      .info {
+        background: #f3f4f6;
+        color: #374151;
+      }
 
       input {
         width: 100%;
@@ -180,6 +248,7 @@
         border-radius: 12px;
         border: 1px solid #eee;
         background: #fafafa;
+        box-sizing: border-box;
       }
 
       button {
@@ -203,33 +272,32 @@
         color: #666;
         font-size: 14px;
       }
+
+      .open-app {
+        display: none;
+        margin-top: 12px;
+      }
     </style>
   </head>
 
   <body>
     <div class="card">
-      <!-- 🔥 AQUÍ TU LOGO -->
-      <img src="./icon.png" alt="MiTandita" class="logo" />
-
-      <style>
-.logo {
-  width: 160px;
-  height: 160px;
-  object-fit: contain;
-  margin-bottom: 12px;
-}
-</style>
+      <img src="./logo.png" alt="MiTandita" class="logo" />
 
       <h1>Cambiar contraseña</h1>
       <p class="sub">MiTandita</p>
 
       <div id="status" class="status"></div>
 
-      <form id="reset-form">
+      <form id="reset-form" style="display: none;">
         <input id="password" type="password" placeholder="Nueva contraseña" />
         <input id="confirmPassword" type="password" placeholder="Confirmar contraseña" />
-        <button id="submitBtn">Guardar contraseña</button>
+        <button id="submitBtn" type="submit">Guardar contraseña</button>
       </form>
+
+      <button id="openAppBtn" class="open-app" onclick="openApp()">
+        Abrir app
+      </button>
 
       <div class="footer">
         Después vuelve a la app e inicia sesión.
